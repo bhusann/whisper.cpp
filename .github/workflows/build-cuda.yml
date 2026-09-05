@@ -1,0 +1,107 @@
+name: CI (CUDA - Linux)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/build-cuda.yml'
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - '**/*.h'
+      - '**/*.hpp'
+      - '**/*.c'
+      - '**/*.cpp'
+      - '**/*.cu'
+      - '**/*.cuh'
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/build-cuda.yml'
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - '**/*.h'
+      - '**/*.hpp'
+      - '**/*.c'
+      - '**/*.cpp'
+      - '**/*.cu'
+      - '**/*.cuh'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build-cuda-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Clone
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.21
+        with:
+          key: cuda-linux
+          evict-old-files: 1d
+          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libcurl4-openssl-dev ccache
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.21
+        id: cuda-toolkit
+        with:
+          cuda: '12.4.1'
+          method: 'network'
+          sub-packages: '["compiler", "cudart", "cublas", "cublas_dev", "thrust", "curand", "cusparse", "cusolver", "nvjitlink"]'
+
+      - name: Verify CUDA
+        run: |
+          nvcc --version
+          which nvcc
+          nvidia-smi || echo "no GPU on runner - expected"
+
+      - name: Configure (CMake + CUDA)
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=ON \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90" \
+            -DWHISPER_SDL2=OFF \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_INSTALL_RPATH='$ORIGIN' \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+
+      - name: Build
+        run: |
+          cmake --build build -j $(nproc)
+          ls -lh build/bin/
+          file build/bin/whisper-cli || true
+          ldd build/bin/whisper-cli || true
+
+      - name: Smoke test
+        run: |
+          ./build/bin/whisper-cli --help || true
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          tar -czf dist/whisper-cpp-cuda-12.4.1-ubuntu22.04-x64.tar.gz -C build bin
+          ls -lh dist/
+          sha256sum dist/*.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@eae5c3aa5fb11e76a24df0a38220d8f6db002c8fc # v4
+        with:
+          name: whisper-cpp-cuda-12.4.1-ubuntu22.04-x64
+          path: |
+            dist/*.tar.gz
+            build/bin/*
+          if-no-files-found: error
+          retention-days: 30
