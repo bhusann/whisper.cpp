@@ -36,10 +36,10 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Clone
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@v4
 
       - name: ccache
-        uses: ggml-org/ccache-action@v1.2.21
+        uses: hendrikmuhs/ccache-action@v1.2.18
         with:
           key: cuda-linux
           evict-old-files: 1d
@@ -97,7 +97,7 @@ jobs:
           sha256sum dist/*.tar.gz
 
       - name: Upload artifact
-        uses: actions/upload-artifact@eae5c3aa5fb11e76a24df0a38220d8f6db002c8fc # v4
+        uses: actions/upload-artifact@v4
         with:
           name: whisper-cpp-cuda-12.4.1-ubuntu22.04-x64
           path: |
